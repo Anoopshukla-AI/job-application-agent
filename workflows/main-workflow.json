@@ -1,0 +1,481 @@
+{
+  "name": "Job Application Agent - Main",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 12
+            }
+          ]
+        }
+      },
+      "id": "trigger1",
+      "name": "Schedule Trigger (12h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst traceId = crypto.randomUUID();\nreturn [{ json: { trace_id: traceId, started_at: new Date().toISOString() } }];"
+      },
+      "id": "gentrace",
+      "name": "Generate Trace ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://YOUR_LINKEDIN_JOBS_API_ENDPOINT",
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "linkedin",
+      "name": "Fetch LinkedIn Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        -150
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://YOUR_NAUKRI_RSS_OR_API",
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "naukri",
+      "name": "Fetch Naukri Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://YOUR_INDEED_API_OR_SCRAPER",
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "indeed",
+      "name": "Fetch Indeed Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "options": {}
+      },
+      "id": "merge1",
+      "name": "Merge Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nreturn items.map(item => {\n  const c = item.json.company || '';\n  const t = item.json.title || '';\n  const u = item.json.apply_url || '';\n  const hash = crypto.createHash('sha256').update(`${c}|${t}|${u}`).digest('hex');\n  item.json.dedup_hash = hash;\n  return item;\n});"
+      },
+      "id": "hashnode",
+      "name": "Generate Dedup Hash",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": "REPLACE_WITH_APPLICATIONS_DB_ID",
+        "filterType": "manual",
+        "matchType": "anyFilter"
+      },
+      "id": "notioncheck",
+      "name": "Check Duplicate in Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.is_duplicate}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "ifdup",
+      "name": "IF Duplicate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": "gpt-4o",
+        "messages": {
+          "values": [
+            {
+              "content": "You are scoring job fit using the rubric in the Scoring Config Notion page. Candidate: AI Automation Engineer, 2yrs n8n/LangChain/RAG, 7yrs infra. NOT suitable for live coding or deep ML roles.\nJob: {{$json.jd_text}}\nReturn strict JSON: {\"score\": 0-100, \"missing_skills\": [], \"live_coding_risk\": \"YES/NO/UNKNOWN\", \"reasoning\": \"\"}"
+            }
+          ]
+        }
+      },
+      "id": "aiscore",
+      "name": "AI Scoring (GPT-4o)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        1540,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const usage = $('AI Scoring (GPT-4o)').item.json.usage?.total_tokens || 0;\nreturn [{ json: { ...items[0].json, tokens_used: usage } }];"
+      },
+      "id": "tokencheck",
+      "name": "Track Token Usage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$json.score}}",
+              "rightValue": 70,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ]
+        }
+      },
+      "id": "ifhigh",
+      "name": "IF Score >= 70",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": "gpt-4o",
+        "messages": {
+          "values": [
+            {
+              "content": "Draft a 4-line personalized LinkedIn outreach message for this role: {{$json.title}} at {{$json.company}}. Candidate background: AI Automation Engineer, n8n/LangChain/RAG specialist, 7yrs infra."
+            }
+          ]
+        }
+      },
+      "id": "aidraft",
+      "name": "Draft Outreach Message",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        2200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": "REPLACE_WITH_APPLICATIONS_DB_ID"
+      },
+      "id": "notioncreate",
+      "name": "Create Notion Entry",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        2420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID",
+        "text": "=🎯 High-match role: {{$json.title}} @ {{$json.company}}\n📍 {{$json.location}} | Score: {{$json.score}}/100\n🔗 {{$json.apply_url}}\nDraft outreach ready in Notion."
+      },
+      "id": "telegramalert",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": "REPLACE_WITH_EXECUTION_LOG_DB_ID"
+      },
+      "id": "execlog",
+      "name": "Write Execution Log",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        2860,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (12h)": {
+      "main": [
+        [
+          {
+            "node": "Generate Trace ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Trace ID": {
+      "main": [
+        [
+          {
+            "node": "Fetch LinkedIn Jobs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Naukri Jobs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Indeed Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch LinkedIn Jobs": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Naukri Jobs": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Indeed Jobs": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Sources": {
+      "main": [
+        [
+          {
+            "node": "Generate Dedup Hash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Dedup Hash": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate in Notion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate in Notion": {
+      "main": [
+        [
+          {
+            "node": "IF Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Duplicate": {
+      "main": [
+        [],
+        [
+          {
+            "node": "AI Scoring (GPT-4o)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Scoring (GPT-4o)": {
+      "main": [
+        [
+          {
+            "node": "Track Token Usage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Track Token Usage": {
+      "main": [
+        [
+          {
+            "node": "IF Score >= 70",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Score >= 70": {
+      "main": [
+        [
+          {
+            "node": "Draft Outreach Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Draft Outreach Message": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Notion Entry": {
+      "main": [
+        [
+          {
+            "node": "Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Alert": {
+      "main": [
+        [
+          {
+            "node": "Write Execution Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "errorWorkflow": "REPLACE_WITH_ERROR_WORKFLOW_ID",
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "job-application-agent-v2"
+  }
+}
