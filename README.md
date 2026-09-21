@@ -1,5 +1,9 @@
 # Job Application Agent
 
+[![Tech Stack](https://img.shields.io/badge/Tech_Stack-Production_Ready-3776AB?style=flat-square)](https://github.com/Anoopshukla-AI/job-application-agent)
+[![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+
+
 A production-grade n8n AI agent that automates job discovery, fit-scoring, and outreach drafting for AI Automation Engineer / n8n Developer roles — built to solve my own job search and double as a portfolio piece demonstrating production AI-agent design.
 
 ## What It Does
